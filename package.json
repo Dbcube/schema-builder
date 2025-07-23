@@ -1,0 +1,69 @@
+{
+  "name": "@dbcube/schema-builder",
+  "version": "1.0.6",
+  "description": "The DBCube Query Builder is a lightweight, flexible, and fluent library for building queries across multiple database engines, including MySQL, PostgreSQL, SQLite, and MongoDB, using JavaScript/Node.js. \nIts agnostic design allows you to generate data manipulation (DML) and data definition (DDL) operations with a clean, chainable syntax—without sacrificing power or expressiveness.\nIt’s designed to work seamlessly in both SQL and NoSQL environments, providing a consistent abstraction layer across different storage technologies while still leveraging the native capabilities of each engine.",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    "import": "./dist/index.js",
+    "require": "./dist/index.cjs"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "dbcube",
+    "mysql",
+    "mongodb",
+    "postgresql",
+    "sqlite",
+    "database",
+    "db",
+    "orm",
+    "sql",
+    "query builder",
+    "query",
+    "builder",
+    "nodejs",
+    "backend",
+    "library",
+    "database library",
+    "base de datos",
+    "sequelize alternative",
+    "lightweight orm",
+    "sql toolkit",
+    "query optimizer",
+    "typescript",
+    "javascript",
+    "async",
+    "modern database",
+    "dbcube-orm",
+    "@dbcube/query-builder",
+    "query-builder",
+    "dbcube-query-builder",
+    "@dbcube/query-builder",
+    "albert",
+    "araya",
+    "@dbcube",
+    "@albrtaraya"
+  ],
+  "author": "Albert Araya",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@dbcube/core": "file:../core"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Dbcube/query-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.2",
+    "rollup": "^4.36.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.2"
+  }
+}
