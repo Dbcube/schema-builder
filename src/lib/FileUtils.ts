@@ -46,10 +46,10 @@ class FileUtils {
 
     function recurse(currentDir: string): void {
       const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         const fullPath = path.join(currentDir, entry.name);
-        
+
         if (entry.isDirectory()) {
           recurse(fullPath);
         } else if (entry.isFile() && entry.name.endsWith(suffix)) {
@@ -68,6 +68,40 @@ class FileUtils {
     });
 
     return cubeFiles;
+  }
+
+  /**
+   * Extrae nombres de tablas reales de archivos .cube
+   * @param {string} filePath - String ruta del archivo .cube
+   * @returns {object} - Objeto que contiene el estado y el mensaje con el nombre de la tabla
+  */
+  static extracTableNameFromCube(filePath: string) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+
+      // Patrón principal: @meta({ name: "nombre_tabla"; }) o @meta({ name: 'nombre_tabla'; })
+      const metaMatch = content.match(/@meta\s*\(\s*\{\s*name\s*:\s*["']([^"']+)["']\s*;\s*[^}]*\}\s*\)/s);
+      if (metaMatch) {
+        return {
+          status: 200,
+          message: metaMatch[1]
+        };
+      }
+
+      throw new Error(`Error to execute this file ${filePath} because no exist a name of table.`);
+
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        return {
+          status: 500,
+          message: error.message
+        };
+      }
+      return {
+        status: 500,
+        message: String(error)
+      };
+    }
   }
 }
 

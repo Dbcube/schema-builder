@@ -2,6 +2,8 @@ import fs from 'fs';
 import { Engine, TableProcessor } from "@dbcube/core";
 import path from 'path';
 import FileUtils from './FileUtils';
+import chalk from 'chalk';
+import { UIUtils, ProcessSummary } from './UIUtils';
 
 /**
  * Main class to handle MySQL database connections and queries.
@@ -12,26 +14,77 @@ class Schema {
     private engine: any;
 
     constructor(name: string) {
-        this.name = name; 
-        const engine = new Engine(name);
-        this.engine = engine;
+        this.name = name;
+        this.engine = new Engine(name);
     }
 
     async createDatabase(): Promise<any> {
+        const startTime = Date.now();
         const rootPath = path.resolve(process.cwd());
-        const response =  await this.engine.run('schema_engine',[
-            '--action', 'create_database',
-            '--path', rootPath,
-        ]);
-        if(response.status!=200){
-            returnFormattedError(response.status, response.message);
+
+        // Show header
+        UIUtils.showOperationHeader(' CREATING DATABASE', this.name, '🗄️');
+
+        // Show progress for database creation
+        await UIUtils.showItemProgress('Preparando e instalando base de datos', 1, 1);
+
+        try {
+            const response = await this.engine.run('schema_engine', [
+                '--action', 'create_database',
+                '--path', rootPath,
+            ]);
+
+            if (response.status != 200) {
+                UIUtils.showItemError('Database', `Error creating: ${response.message}`);
+                const summary: ProcessSummary = {
+                    startTime,
+                    totalProcessed: 0,
+                    successCount: 0,
+                    errorCount: 1,
+                    processedItems: [],
+                    operationName: 'create database',
+                    databaseName: this.name
+                };
+                UIUtils.showOperationSummary(summary);
+                returnFormattedError(response.status, response.message);
+            }
+
+            UIUtils.showItemSuccess('Database');
+
+            // Show final summary
+            const summary: ProcessSummary = {
+                startTime,
+                totalProcessed: 1,
+                successCount: 1,
+                errorCount: 0,
+                processedItems: [this.name],
+                operationName: 'create database',
+                databaseName: this.name
+            };
+            UIUtils.showOperationSummary(summary);
+
+            return response.data;
+
+        } catch (error: any) {
+            UIUtils.showItemError('Database', error.message);
+            const summary: ProcessSummary = {
+                startTime,
+                totalProcessed: 0,
+                successCount: 0,
+                errorCount: 1,
+                processedItems: [],
+                operationName: 'create database',
+                databaseName: this.name
+            };
+            UIUtils.showOperationSummary(summary);
+            throw error;
         }
-        return response.data;
     }
 
     async refreshTables(): Promise<any> {
+        const startTime = Date.now();
         const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
-        
+
         // Verificar si la carpeta existe
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
@@ -40,57 +93,101 @@ class Schema {
         const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', 'table.cube');
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
-        } else {  
-            for (const file of cubeFiles) {
-                const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
-                const stats = fs.statSync(filePath);
-                if (stats.isFile()) {
-                    const dml =  await this.engine.run('schema_engine',[
+        }
+
+        // Show header
+        UIUtils.showOperationHeader('EXECUTING REFRESH TABLES', this.name, '🔄');
+
+        let totalTablesProcessed = 0;
+        let successCount = 0;
+        let errorCount = 0;
+        const processedTables: string[] = [];
+
+        for (let index = 0; index < cubeFiles.length; index++) {
+            const file = cubeFiles[index];
+            const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
+            const stats = fs.statSync(filePath);
+
+            if (stats.isFile()) {
+                const getTableName = FileUtils.extracTableNameFromCube(filePath);
+                const tableName = getTableName.status === 200 ? getTableName.message : path.basename(file, '.table.cube');
+
+                // Show visual progress for each table
+                await UIUtils.showItemProgress(tableName, index + 1, cubeFiles.length);
+
+                try {
+                    const dml = await this.engine.run('schema_engine', [
                         '--action', 'parse_table',
                         '--mode', 'refresh',
                         '--schema-path', filePath,
                     ]);
-                    if(dml.status!=200){
-                        returnFormattedError(dml.status, dml.message);
+                    if (dml.status != 200) {
+                        UIUtils.showItemError(tableName, `Error parsing: ${dml.message}`);
+                        errorCount++;
+                        continue;
                     }
-                    const parseJson = JSON.stringify(dml.data.actions).replace(/[\r\n\t]/g, '').replace(/\\[rnt]/g, '').replace(/\s{2,}/g, ' '); 
+                    const parseJson = JSON.stringify(dml.data.actions).replace(/[\r\n\t]/g, '').replace(/\\[rnt]/g, '').replace(/\s{2,}/g, ' ');
 
-                    const queries =  await this.engine.run('schema_engine',[
+                    const queries = await this.engine.run('schema_engine', [
                         '--action', 'generate',
                         '--mode', 'refresh',
                         '--dml', parseJson,
                     ]);
-                    if(queries.status!=200){
-                        returnFormattedError(queries.status, queries.message);
+                    if (queries.status != 200) {
+                        UIUtils.showItemError(tableName, `Error generating queries: ${queries.message}`);
+                        errorCount++;
+                        continue;
                     }
                     delete queries.data.database_type;
-                    
-                    const parseJsonQueries = JSON.stringify(queries.data); 
 
-                    const response =  await this.engine.run('schema_engine',[
+                    const parseJsonQueries = JSON.stringify(queries.data);
+
+                    const response = await this.engine.run('schema_engine', [
                         '--action', 'execute',
                         '--mode', 'refresh',
                         '--dml', parseJsonQueries,
                     ]);
 
-                    if(response.status!=200){
-                        returnFormattedError(response.status, response.message);
+                    if (response.status != 200) {
+                        UIUtils.showItemError(tableName, `Error executing: ${response.message}`);
+                        errorCount++;
+                        continue;
                     }
-                    const createQuery = queries.data.regular_queries.filter((q:string) => q.includes("CREATE"))[0];
-                    
+                    const createQuery = queries.data.regular_queries.filter((q: string) => q.includes("CREATE"))[0];
+
                     await TableProcessor.saveQuery(dml.data.table, dml.data.database, createQuery);
 
-                    return response.data;
-                    
+                    UIUtils.showItemSuccess(tableName);
+                    successCount++;
+                    processedTables.push(tableName);
+                    totalTablesProcessed++;
+
+                } catch (error: any) {
+                    UIUtils.showItemError(tableName, error.message);
+                    errorCount++;
                 }
             }
         }
-        return null;
+
+        // Show final summary
+        const summary: ProcessSummary = {
+            startTime,
+            totalProcessed: totalTablesProcessed,
+            successCount,
+            errorCount,
+            processedItems: processedTables,
+            operationName: 'refresh tables',
+            databaseName: this.name
+        };
+        UIUtils.showOperationSummary(summary);
+
+        return totalTablesProcessed > 0 ? { processed: totalTablesProcessed, success: successCount, errors: errorCount } : null;
     }
 
     async freshTables(): Promise<any> {
+        const startTime = Date.now();
         const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
-        
+
         // Verificar si la carpeta existe
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
@@ -99,62 +196,110 @@ class Schema {
         const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', 'table.cube');
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
-        } else {  
-            for (const file of cubeFiles) {
-                const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
-                const stats = fs.statSync(filePath);
-                if (stats.isFile()) {
-                    const dml =  await this.engine.run('schema_engine',[
+        }
+
+        // Show header
+        UIUtils.showOperationHeader('EXECUTING FRESH TABLES', this.name);
+
+        let totalTablesProcessed = 0;
+        let successCount = 0;
+        let errorCount = 0;
+        const processedTables: string[] = [];
+
+        for (let index = 0; index < cubeFiles.length; index++) {
+            const file = cubeFiles[index];
+            const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
+            const stats = fs.statSync(filePath);
+
+            if (stats.isFile()) {
+                const getTableName = FileUtils.extracTableNameFromCube(filePath);
+                const tableName = getTableName.status === 200 ? getTableName.message : path.basename(file, '.table.cube');
+
+                // Show visual progress for each table
+                await UIUtils.showItemProgress(tableName, index + 1, cubeFiles.length);
+
+                try {
+                    const dml = await this.engine.run('schema_engine', [
                         '--action', 'parse_table',
                         '--schema-path', filePath,
                         '--mode', 'fresh',
                     ]);
-                    if(dml.status!=200){
-                        returnFormattedError(dml.status, dml.message);
-                    }
-                    const parseJson = JSON.stringify(dml.data.actions).replace(/[\r\n\t]/g, '').replace(/\\[rnt]/g, '').replace(/\s{2,}/g, ' '); 
 
-                    const queries =  await this.engine.run('schema_engine',[
+                    if (dml.status != 200) {
+                        UIUtils.showItemError(tableName, `Error parsing: ${dml.message}`);
+                        errorCount++;
+                        continue;
+                    }
+
+                    const parseJson = JSON.stringify(dml.data.actions).replace(/[\r\n\t]/g, '').replace(/\\[rnt]/g, '').replace(/\s{2,}/g, ' ');
+
+                    const queries = await this.engine.run('schema_engine', [
                         '--action', 'generate',
                         '--dml', parseJson,
                     ]);
-                    if(queries.status!=200){
-                        returnFormattedError(queries.status, queries.message);
+
+                    if (queries.status != 200) {
+                        UIUtils.showItemError(tableName, `Error generating queries: ${queries.message}`);
+                        errorCount++;
+                        continue;
                     }
-                    delete queries.data. _type;
-                        
-                    const createQuery = queries.data.regular_queries.filter((q:string) => q.includes("CREATE"))[0];
-                    
-                    if(queries.data.regular_queries.length>0){
+
+                    delete queries.data._type;
+                    const createQuery = queries.data.regular_queries.filter((q: string) => q.includes("CREATE"))[0];
+
+                    if (queries.data.regular_queries.length > 0) {
                         const nowQueries = await TableProcessor.generateAlterQueries(queries.data.regular_queries[0], dml.data.motor, dml.data.table, dml.data.database);
                         queries.data.regular_queries = nowQueries;
                     }
 
-                    const parseJsonQueries = JSON.stringify(queries.data); 
+                    const parseJsonQueries = JSON.stringify(queries.data);
 
-                    const response =  await this.engine.run('schema_engine',[
+                    const response = await this.engine.run('schema_engine', [
                         '--action', 'execute',
                         '--mode', 'fresh',
                         '--dml', parseJsonQueries,
                     ]);
 
-                    if(response.status!=200){
-                        returnFormattedError(response.status, response.message);
+                    if (response.status != 200) {
+                        UIUtils.showItemError(tableName, `Error executing: ${response.message}`);
+                        errorCount++;
+                        continue;
                     }
-                    
+
                     await TableProcessor.saveQuery(dml.data.table, dml.data.database, createQuery);
 
-                    return response.data;
-                    
+                    UIUtils.showItemSuccess(tableName);
+                    successCount++;
+                    processedTables.push(tableName);
+                    totalTablesProcessed++;
+
+                } catch (error: any) {
+                    UIUtils.showItemError(tableName, error.message);
+                    errorCount++;
                 }
             }
         }
-        return null;
+
+        // Show final summary
+        const summary: ProcessSummary = {
+            startTime,
+            totalProcessed: totalTablesProcessed,
+            successCount,
+            errorCount,
+            processedItems: processedTables,
+            operationName: 'fresh tables',
+            databaseName: this.name
+        };
+        UIUtils.showOperationSummary(summary);
+
+        return totalTablesProcessed > 0 ? { processed: totalTablesProcessed, success: successCount, errors: errorCount } : null;
     }
 
+
     async executeSeeders(): Promise<any> {
+        const startTime = Date.now();
         const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
-        
+
         // Verificar si la carpeta existe
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
@@ -164,34 +309,72 @@ class Schema {
 
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
-        } else {  
-            for (const file of cubeFiles) {
-                const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
-                const stats = fs.statSync(filePath);
-                
-                if (stats.isFile()) {
+        }
 
-                    const response =  await this.engine.run('schema_engine',[
+        // Show header
+        UIUtils.showOperationHeader('EXECUTING SEEDERS', this.name, '🌱');
+
+        let totalSeedersProcessed = 0;
+        let successCount = 0;
+        let errorCount = 0;
+        const processedSeeders: string[] = [];
+
+        for (let index = 0; index < cubeFiles.length; index++) {
+            const file = cubeFiles[index];
+            const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
+            const stats = fs.statSync(filePath);
+
+            if (stats.isFile()) {
+                const getSeederName = FileUtils.extracTableNameFromCube(filePath);
+                const seederName = getSeederName.status === 200 ? getSeederName.message : path.basename(file, '.seeder.cube');
+
+                // Show visual progress for each seeder
+                await UIUtils.showItemProgress(seederName, index + 1, cubeFiles.length);
+
+                try {
+                    const response = await this.engine.run('schema_engine', [
                         '--action', 'seeder',
                         '--schema-path', filePath,
                     ]);
 
-                    if(response.status!=200){
-                        returnFormattedError(response.status, response.message);
+                    if (response.status != 200) {
+                        UIUtils.showItemError(seederName, `Error executing: ${response.message}`);
+                        errorCount++;
+                        continue;
                     }
 
-                    return response.data;
-                    
+                    UIUtils.showItemSuccess(seederName);
+                    successCount++;
+                    processedSeeders.push(seederName);
+                    totalSeedersProcessed++;
+
+                } catch (error: any) {
+                    UIUtils.showItemError(seederName, error.message);
+                    errorCount++;
                 }
             }
         }
-        return null;
+
+        // Show final summary
+        const summary: ProcessSummary = {
+            startTime,
+            totalProcessed: totalSeedersProcessed,
+            successCount,
+            errorCount,
+            processedItems: processedSeeders,
+            operationName: 'seeders',
+            databaseName: this.name
+        };
+        UIUtils.showOperationSummary(summary);
+
+        return totalSeedersProcessed > 0 ? { processed: totalSeedersProcessed, success: successCount, errors: errorCount } : null;
     }
 
     async executeTriggers(): Promise<any> {
+        const startTime = Date.now();
         const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
         const triggersDirExit = path.join(process.cwd(), 'dbcube', 'triggers');
-        
+
         // Verificar si la carpeta existe
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
@@ -201,29 +384,66 @@ class Schema {
 
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
-        } else {  
-            for (const file of cubeFiles) {
-                const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
-                const stats = fs.statSync(filePath);
-                
-                if (stats.isFile()) {
+        }
 
-                    const response =  await this.engine.run('schema_engine',[
+        // Show header
+        UIUtils.showOperationHeader('EXECUTING TRIGGERS', this.name, '⚡');
+
+        let totalTriggersProcessed = 0;
+        let successCount = 0;
+        let errorCount = 0;
+        const processedTriggers: string[] = [];
+
+        for (let index = 0; index < cubeFiles.length; index++) {
+            const file = cubeFiles[index];
+            const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
+            const stats = fs.statSync(filePath);
+
+            if (stats.isFile()) {
+                const getTriggerName = FileUtils.extracTableNameFromCube(filePath);
+                const triggerName = getTriggerName.status === 200 ? getTriggerName.message : path.basename(file, '.trigger.cube');
+
+                // Show visual progress for each trigger
+                await UIUtils.showItemProgress(triggerName, index + 1, cubeFiles.length);
+
+                try {
+                    const response = await this.engine.run('schema_engine', [
                         '--action', 'trigger',
                         '--path-exit', triggersDirExit,
                         '--schema-path', filePath,
                     ]);
 
-                    if(response.status!=200){
-                        returnFormattedError(response.status, response.message);
+                    if (response.status != 200) {
+                        UIUtils.showItemError(triggerName, `Error executing: ${response.message}`);
+                        errorCount++;
+                        continue;
                     }
 
-                    return response.data;
-                    
+                    UIUtils.showItemSuccess(triggerName);
+                    successCount++;
+                    processedTriggers.push(triggerName);
+                    totalTriggersProcessed++;
+
+                } catch (error: any) {
+                    UIUtils.showItemError(triggerName, error.message);
+                    errorCount++;
                 }
             }
         }
-        return null;
+
+        // Show final summary
+        const summary: ProcessSummary = {
+            startTime,
+            totalProcessed: totalTriggersProcessed,
+            successCount,
+            errorCount,
+            processedItems: processedTriggers,
+            operationName: 'triggers',
+            databaseName: this.name
+        };
+        UIUtils.showOperationSummary(summary);
+
+        return totalTriggersProcessed > 0 ? { processed: totalTriggersProcessed, success: successCount, errors: errorCount } : null;
     }
 }
 
@@ -242,7 +462,7 @@ function returnFormattedError(status: number, message: string) {
     let help = '';
     const color = status === 600 ? YELLOW : RED;
 
-    
+
     if (message.includes("[help]")) {
         const parts = message.split("[help]");
         output += `\n${RED}${BOLD}${parts[0]}${RESET}`;
@@ -255,13 +475,13 @@ function returnFormattedError(status: number, message: string) {
     const stackLines = err.stack?.split('\n') || [];
 
     // Buscamos la primera línea del stack fuera de node_modules
-    const relevantStackLine = stackLines.find(line => 
+    const relevantStackLine = stackLines.find(line =>
         line.includes('.js:') && !line.includes('node_modules')
     );
 
     if (relevantStackLine) {
-        const match = relevantStackLine.match(/\((.*):(\d+):(\d+)\)/) || 
-                      relevantStackLine.match(/at (.*):(\d+):(\d+)/);
+        const match = relevantStackLine.match(/\((.*):(\d+):(\d+)\)/) ||
+            relevantStackLine.match(/at (.*):(\d+):(\d+)/);
 
         if (match) {
             const [, filePath, lineStr, columnStr] = match;
@@ -287,7 +507,7 @@ function returnFormattedError(status: number, message: string) {
                 output += `\n${CYAN}${BOLD}Stack Trace:${RESET}\n${stackLines.slice(2).join('\n')}\n`;
             }
         }
-    }    
+    }
     output += help;
     console.error(output);
     process.exit(1);
