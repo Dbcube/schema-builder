@@ -1,4 +1,12 @@
 import chalk from 'chalk';
+import fs from 'fs';
+
+export interface ProcessError {
+    itemName: string;
+    error: string;
+    filePath?: string;
+    lineNumber?: number;
+}
 
 export interface ProcessSummary {
     startTime: number;
@@ -8,6 +16,7 @@ export interface ProcessSummary {
     processedItems: string[];
     operationName: string;
     databaseName: string;
+    errors: ProcessError[];
 }
 
 export class UIUtils {
@@ -53,11 +62,10 @@ export class UIUtils {
     }
 
     /**
-     * Shows error for an item
+     * Shows error for an item (simplified - only shows X)
      */
     static showItemError(itemName: string, error: string): void {
-        process.stdout.write(` ${chalk.red('✗')} ${chalk.red('ERROR')}\n`);
-        console.log(`${chalk.red('│  ')} ${chalk.gray('└─')} ${chalk.red(error)}`);
+        process.stdout.write(` ${chalk.red('✗')}\n`);
     }
 
     /**
@@ -100,5 +108,60 @@ export class UIUtils {
 
         console.log(`${chalk.blue('├─')} ${chalk.gray(`Total time: ${totalTime}s`)}`);
         console.log(`${chalk.blue('└─')} ${chalk.bold(totalProcessed > 0 ? chalk.green('✅ Completed') : chalk.yellow('⚠️  No changes'))}`);
+
+        // Show detailed errors section if there are errors
+        if (summary.errors && summary.errors.length > 0) {
+            console.log(`\n${chalk.red('🚫')} ${chalk.bold.red('ERRORS FOUND')}`);
+            console.log(chalk.red('─'.repeat(60)));
+            
+            summary.errors.forEach((error, index) => {
+                // Show error with [error] tag format
+                console.log(`${chalk.red('[error]')} ${chalk.red(error.error)}`);
+                console.log('');
+                
+                if (error.filePath) {
+                    // Show code location with [code] tag format
+                    const location = error.lineNumber ? `${error.filePath}:${error.lineNumber}:7` : error.filePath;
+                    console.log(`${chalk.cyan('[code]')} ${chalk.yellow(location)}`);
+                    
+                    // Try to show code context if file exists
+                    UIUtils.showCodeContext(error.filePath, error.lineNumber || 1);
+                }
+                
+                if (index < summary.errors.length - 1) {
+                    console.log('');
+                }
+            });
+        }
+    }
+
+    /**
+     * Shows code context around an error location
+     */
+    static showCodeContext(filePath: string, lineNumber: number, contextLines: number = 2): void {
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const lines = content.split('\n');
+            
+            const startLine = Math.max(0, lineNumber - contextLines - 1);
+            const endLine = Math.min(lines.length, lineNumber + contextLines);
+            
+            for (let i = startLine; i < endLine; i++) {
+                const currentLineNum = i + 1;
+                const line = lines[i];
+                const lineNumStr = currentLineNum.toString().padStart(4, ' ');
+                
+                if (currentLineNum === lineNumber) {
+                    // Highlight the error line with arrow
+                    console.log(`${chalk.gray(lineNumStr)} ${chalk.red('<-')}       ${chalk.white(line)}`);
+                } else {
+                    // Normal context lines
+                    console.log(`${chalk.gray(lineNumStr)}          ${chalk.white(line)}`);
+                }
+            }
+        } catch (error) {
+            // If we can't read the file, just skip showing context
+            console.log(chalk.gray('   (unable to show code context)'));
+        }
     }
 }

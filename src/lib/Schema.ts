@@ -1,9 +1,9 @@
 import fs from 'fs';
-import { Engine, TableProcessor } from "@dbcube/core";
+import { Engine, TableProcessor, Config as ConfigClass } from "@dbcube/core";
 import path from 'path';
 import FileUtils from './FileUtils';
 import chalk from 'chalk';
-import { UIUtils, ProcessSummary } from './UIUtils';
+import { UIUtils, ProcessSummary, ProcessError } from './UIUtils';
 
 /**
  * Main class to handle MySQL database connections and queries.
@@ -16,6 +16,107 @@ class Schema {
     constructor(name: string) {
         this.name = name;
         this.engine = new Engine(name);
+    }
+
+    /**
+     * Validates that the database specified in cube file exists in configuration
+     * @param filePath - Path to the cube file
+     * @returns true if valid, throws error if invalid
+     */
+    private validateDatabaseConfiguration(filePath: string): { isValid: boolean; error?: ProcessError } {
+        try {
+            // Extract database name from cube file
+            const dbResult = FileUtils.extractDatabaseNameFromCube(filePath);
+            if (dbResult.status !== 200) {
+                return {
+                    isValid: false,
+                    error: {
+                        itemName: path.basename(filePath, path.extname(filePath)),
+                        error: `Error reading database directive: ${dbResult.message}`,
+                        filePath,
+                        lineNumber: this.findDatabaseLineNumber(filePath)
+                    }
+                };
+            }
+
+            const cubeDbName = dbResult.message;
+
+            // Get available configurations
+            const configInstance = new ConfigClass();
+            const configFilePath = path.resolve(process.cwd(), 'dbcube.config.js');
+            const configFn = require(configFilePath);
+
+            if (typeof configFn === 'function') {
+                configFn(configInstance);
+            } else {
+                throw new Error('❌ The dbcube.config.js file does not export a function.');
+            }
+
+            // Check if the database configuration exists
+            const dbConfig = configInstance.getDatabase(cubeDbName);
+            if (!dbConfig) {
+                // Try to get available databases by attempting to access common ones
+                let availableDbs: string[] = [];
+                try {
+                    // Try some common database names to see what exists
+                    const testNames = ['test', 'development', 'production', 'local', 'main'];
+                    for (const testName of testNames) {
+                        try {
+                            const testConfig = configInstance.getDatabase(testName);
+                            if (testConfig) {
+                                availableDbs.push(testName);
+                            }
+                        } catch (e) {
+                            // Skip non-existent configs
+                        }
+                    }
+                } catch (e) {
+                    // Fallback if we can't determine available databases
+                }
+
+                const availableText = availableDbs.length > 0 ? availableDbs.join(', ') : 'none found';
+                return {
+                    isValid: false,
+                    error: {
+                        itemName: path.basename(filePath, path.extname(filePath)),
+                        error: `Database configuration '${cubeDbName}' not found in dbcube.config.js. Available: ${availableText}`,
+                        filePath,
+                        lineNumber: this.findDatabaseLineNumber(filePath)
+                    }
+                };
+            }
+
+            return { isValid: true };
+
+        } catch (error: any) {
+            return {
+                isValid: false,
+                error: {
+                    itemName: path.basename(filePath, path.extname(filePath)),
+                    error: `Database configuration validation failed: ${error.message}`,
+                    filePath,
+                    lineNumber: this.findDatabaseLineNumber(filePath)
+                }
+            };
+        }
+    }
+
+    /**
+     * Finds the line number where @database directive is located
+     */
+    private findDatabaseLineNumber(filePath: string): number {
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].includes('@database')) {
+                    return i + 1; // Line numbers start at 1
+                }
+            }
+            return 1;
+        } catch {
+            return 1;
+        }
     }
 
     async createDatabase(): Promise<any> {
@@ -48,7 +149,8 @@ class Schema {
                 errorCount: 0,
                 processedItems: [this.name],
                 operationName: 'create database',
-                databaseName: this.name
+                databaseName: this.name,
+                errors: []
             };
             UIUtils.showOperationSummary(summary);
 
@@ -63,7 +165,8 @@ class Schema {
                 errorCount: 1,
                 processedItems: [],
                 operationName: 'create database',
-                databaseName: this.name
+                databaseName: this.name,
+                errors: []
             };
             UIUtils.showOperationSummary(summary);
             throw error;
@@ -91,6 +194,7 @@ class Schema {
         let successCount = 0;
         let errorCount = 0;
         const processedTables: string[] = [];
+        const errors: ProcessError[] = [];
 
         for (let index = 0; index < cubeFiles.length; index++) {
             const file = cubeFiles[index];
@@ -105,6 +209,15 @@ class Schema {
                 await UIUtils.showItemProgress(tableName, index + 1, cubeFiles.length);
 
                 try {
+                    // Validate database configuration before processing
+                    const validation = this.validateDatabaseConfiguration(filePath);
+                    if (!validation.isValid && validation.error) {
+                        UIUtils.showItemError(tableName, validation.error.error);
+                        errors.push(validation.error);
+                        errorCount++;
+                        continue;
+                    }
+
                     const dml = await this.engine.run('schema_engine', [
                         '--action', 'parse_table',
                         '--mode', 'refresh',
@@ -149,7 +262,13 @@ class Schema {
                     totalTablesProcessed++;
 
                 } catch (error: any) {
+                    const processError: ProcessError = {
+                        itemName: tableName,
+                        error: error.message,
+                        filePath
+                    };
                     UIUtils.showItemError(tableName, error.message);
+                    errors.push(processError);
                     errorCount++;
                 }
             }
@@ -163,7 +282,8 @@ class Schema {
             errorCount,
             processedItems: processedTables,
             operationName: 'refresh tables',
-            databaseName: this.name
+            databaseName: this.name,
+            errors
         };
         UIUtils.showOperationSummary(summary);
 
@@ -191,6 +311,7 @@ class Schema {
         let successCount = 0;
         let errorCount = 0;
         const processedTables: string[] = [];
+        const errors: ProcessError[] = [];
 
         for (let index = 0; index < cubeFiles.length; index++) {
             const file = cubeFiles[index];
@@ -205,6 +326,15 @@ class Schema {
                 await UIUtils.showItemProgress(tableName, index + 1, cubeFiles.length);
 
                 try {
+                    // Validate database configuration before processing
+                    const validation = this.validateDatabaseConfiguration(filePath);
+                    if (!validation.isValid && validation.error) {
+                        UIUtils.showItemError(tableName, validation.error.error);
+                        errors.push(validation.error);
+                        errorCount++;
+                        continue;
+                    }
+
                     const dml = await this.engine.run('schema_engine', [
                         '--action', 'parse_table',
                         '--schema-path', filePath,
@@ -255,7 +385,13 @@ class Schema {
                     totalTablesProcessed++;
 
                 } catch (error: any) {
+                    const processError: ProcessError = {
+                        itemName: tableName,
+                        error: error.message,
+                        filePath
+                    };
                     UIUtils.showItemError(tableName, error.message);
+                    errors.push(processError);
                     errorCount++;
                 }
             }
@@ -269,7 +405,8 @@ class Schema {
             errorCount,
             processedItems: processedTables,
             operationName: 'fresh tables',
-            databaseName: this.name
+            databaseName: this.name,
+            errors
         };
         UIUtils.showOperationSummary(summary);
 
@@ -299,6 +436,7 @@ class Schema {
         let successCount = 0;
         let errorCount = 0;
         const processedSeeders: string[] = [];
+        const errors: ProcessError[] = [];
 
         for (let index = 0; index < cubeFiles.length; index++) {
             const file = cubeFiles[index];
@@ -313,6 +451,15 @@ class Schema {
                 await UIUtils.showItemProgress(seederName, index + 1, cubeFiles.length);
 
                 try {
+                    // Validate database configuration before processing
+                    const validation = this.validateDatabaseConfiguration(filePath);
+                    if (!validation.isValid && validation.error) {
+                        UIUtils.showItemError(seederName, validation.error.error);
+                        errors.push(validation.error);
+                        errorCount++;
+                        continue;
+                    }
+
                     const response = await this.engine.run('schema_engine', [
                         '--action', 'seeder',
                         '--schema-path', filePath,
@@ -329,7 +476,13 @@ class Schema {
                     totalSeedersProcessed++;
 
                 } catch (error: any) {
+                    const processError: ProcessError = {
+                        itemName: seederName,
+                        error: error.message,
+                        filePath
+                    };
                     UIUtils.showItemError(seederName, error.message);
+                    errors.push(processError);
                     errorCount++;
                 }
             }
@@ -343,7 +496,8 @@ class Schema {
             errorCount,
             processedItems: processedSeeders,
             operationName: 'seeders',
-            databaseName: this.name
+            databaseName: this.name,
+            errors
         };
         UIUtils.showOperationSummary(summary);
 
@@ -373,6 +527,7 @@ class Schema {
         let successCount = 0;
         let errorCount = 0;
         const processedTriggers: string[] = [];
+        const errors: ProcessError[] = [];
 
         for (let index = 0; index < cubeFiles.length; index++) {
             const file = cubeFiles[index];
@@ -387,6 +542,15 @@ class Schema {
                 await UIUtils.showItemProgress(triggerName, index + 1, cubeFiles.length);
 
                 try {
+                    // Validate database configuration before processing
+                    const validation = this.validateDatabaseConfiguration(filePath);
+                    if (!validation.isValid && validation.error) {
+                        UIUtils.showItemError(triggerName, validation.error.error);
+                        errors.push(validation.error);
+                        errorCount++;
+                        continue;
+                    }
+
                     const response = await this.engine.run('schema_engine', [
                         '--action', 'trigger',
                         '--path-exit', triggersDirExit,
@@ -404,7 +568,13 @@ class Schema {
                     totalTriggersProcessed++;
 
                 } catch (error: any) {
+                    const processError: ProcessError = {
+                        itemName: triggerName,
+                        error: error.message,
+                        filePath
+                    };
                     UIUtils.showItemError(triggerName, error.message);
+                    errors.push(processError);
                     errorCount++;
                 }
             }
@@ -418,7 +588,8 @@ class Schema {
             errorCount,
             processedItems: processedTriggers,
             operationName: 'triggers',
-            databaseName: this.name
+            databaseName: this.name,
+            errors
         };
         UIUtils.showOperationSummary(summary);
 
@@ -428,32 +599,17 @@ class Schema {
 
 
 function returnFormattedError(status: number, message: string) {
-    const RESET = '\x1b[0m';
-    const RED = '\x1b[31m';
-    const YELLOW = '\x1b[33m';
-    const BOLD = '\x1b[1m';
-    const CYAN = '\x1b[36m';
-    const GRAY = '\x1b[90m';
-    const UNDERLINE = '\x1b[4m';
-    const MAGENTA = '\x1b[35m';
+    console.log(`\n${chalk.red('🚫')} ${chalk.bold.red('ERRORS FOUND')}`);
+    console.log(chalk.red('─'.repeat(60)));
 
-    let output = '';
-    let help = '';
-    const color = status === 600 ? YELLOW : RED;
-
-
-    if (message.includes("[help]")) {
-        const parts = message.split("[help]");
-        output += `\n${RED}${BOLD}${parts[0]}${RESET}`;
-        help += `\n${MAGENTA}${BOLD}[help]${RESET} ${GRAY}${parts[1]}${RESET}\n`;
-    } else {
-        output += `\n${color}${BOLD}${message}${RESET}\n`;
-    }
+    // Show error with [error] tag format
+    console.log(`${chalk.red('[error]')} ${chalk.red(message)}`);
+    console.log('');
 
     const err = new Error();
     const stackLines = err.stack?.split('\n') || [];
 
-    // Buscamos la primera línea del stack fuera de node_modules
+    // Find the first stack line outside of node_modules
     const relevantStackLine = stackLines.find(line =>
         line.includes('.js:') && !line.includes('node_modules')
     );
@@ -467,28 +623,29 @@ function returnFormattedError(status: number, message: string) {
             const lineNum = parseInt(lineStr, 10);
             const errorLocation = `${filePath}:${lineStr}:${columnStr}`;
 
-            // Leemos el archivo y sacamos las líneas relevantes
+            // Show code location with [code] tag format
+            console.log(`${chalk.cyan('[code]')} ${chalk.yellow(errorLocation)}`);
+
+            // Show code context
             try {
                 const codeLines = fs.readFileSync(filePath, 'utf-8').split('\n');
                 const start = Math.max(0, lineNum - 3);
                 const end = Math.min(codeLines.length, lineNum + 2);
 
-                output += `\n${CYAN}${BOLD}[code] ${RESET}${YELLOW} ${UNDERLINE}${errorLocation}${RESET}\n`;
-
                 for (let i = start; i < end; i++) {
                     const line = codeLines[i];
                     const lineLabel = `${i + 1}`.padStart(4, ' ');
-                    const pointer = i + 1 === lineNum ? `${RED}<-${RESET}` : '  ';
-                    output += `${GRAY}${lineLabel}${RESET} ${pointer} ${line}\n`;
+                    const pointer = i + 1 === lineNum ? `${chalk.red('<-')}` : '  ';
+                    console.log(`${chalk.gray(lineLabel)} ${pointer}       ${chalk.white(line)}`);
                 }
             } catch (err) {
-                output += `${YELLOW}⚠️ No se pudo leer el archivo de origen: ${filePath}${RESET}\n`;
-                output += `\n${CYAN}${BOLD}Stack Trace:${RESET}\n${stackLines.slice(2).join('\n')}\n`;
+                console.log(chalk.gray('   (unable to show code context)'));
             }
         }
     }
-    output += help;
-    console.error(output);
+
+    console.log('');
+
     process.exit(1);
 }
 

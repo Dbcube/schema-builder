@@ -71,6 +71,40 @@ class FileUtils {
   }
 
   /**
+   * Extracts database name from cube files
+   * @param filePath - Path to the .cube file
+   * @returns Object containing status and database name
+   */
+  static extractDatabaseNameFromCube(filePath: string) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      
+      // Pattern: @database("database_name") or @database('database_name')
+      const databaseMatch = content.match(/@database\s*\(\s*["']([^"']+)["']\s*\)\s*;?/);
+      if (databaseMatch) {
+        return {
+          status: 200,
+          message: databaseMatch[1]
+        };
+      }
+      
+      throw new Error(`No @database directive found in file ${filePath}`);
+      
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        return {
+          status: 500,
+          message: error.message
+        };
+      }
+      return {
+        status: 500,
+        message: String(error)
+      };
+    }
+  }
+
+  /**
    * Extrae nombres de tablas reales de archivos .cube
    * @param {string} filePath - String ruta del archivo .cube
    * @returns {object} - Objeto que contiene el estado y el mensaje con el nombre de la tabla
