@@ -35,17 +35,6 @@ class Schema {
             ]);
 
             if (response.status != 200) {
-                UIUtils.showItemError('Database', `Error creating: ${response.message}`);
-                const summary: ProcessSummary = {
-                    startTime,
-                    totalProcessed: 0,
-                    successCount: 0,
-                    errorCount: 1,
-                    processedItems: [],
-                    operationName: 'create database',
-                    databaseName: this.name
-                };
-                UIUtils.showOperationSummary(summary);
                 returnFormattedError(response.status, response.message);
             }
 
@@ -122,9 +111,8 @@ class Schema {
                         '--schema-path', filePath,
                     ]);
                     if (dml.status != 200) {
-                        UIUtils.showItemError(tableName, `Error parsing: ${dml.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(dml.status, dml.message);
+                        break;
                     }
                     const parseJson = JSON.stringify(dml.data.actions).replace(/[\r\n\t]/g, '').replace(/\\[rnt]/g, '').replace(/\s{2,}/g, ' ');
 
@@ -134,9 +122,8 @@ class Schema {
                         '--dml', parseJson,
                     ]);
                     if (queries.status != 200) {
-                        UIUtils.showItemError(tableName, `Error generating queries: ${queries.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(queries.status, queries.message);
+                        break;
                     }
                     delete queries.data.database_type;
 
@@ -149,9 +136,8 @@ class Schema {
                     ]);
 
                     if (response.status != 200) {
-                        UIUtils.showItemError(tableName, `Error executing: ${response.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(response.status, response.message);
+                        break;
                     }
                     const createQuery = queries.data.regular_queries.filter((q: string) => q.includes("CREATE"))[0];
 
@@ -226,9 +212,8 @@ class Schema {
                     ]);
 
                     if (dml.status != 200) {
-                        UIUtils.showItemError(tableName, `Error parsing: ${dml.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(dml.status, dml.message);
+                        break;
                     }
 
                     const parseJson = JSON.stringify(dml.data.actions).replace(/[\r\n\t]/g, '').replace(/\\[rnt]/g, '').replace(/\s{2,}/g, ' ');
@@ -239,18 +224,15 @@ class Schema {
                     ]);
 
                     if (queries.status != 200) {
-                        UIUtils.showItemError(tableName, `Error generating queries: ${queries.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(queries.status, queries.message);
+                        break;
                     }
 
                     delete queries.data._type;
                     const createQuery = queries.data.regular_queries.filter((q: string) => q.includes("CREATE"))[0];
 
-                    if (queries.data.regular_queries.length > 0) {
-                        const nowQueries = await TableProcessor.generateAlterQueries(queries.data.regular_queries[0], dml.data.motor, dml.data.table, dml.data.database);
-                        queries.data.regular_queries = nowQueries;
-                    }
+                    // For fresh mode, use the generated queries directly without alterations
+                    // generateAlterQueries is used for refresh mode, not fresh mode
 
                     const parseJsonQueries = JSON.stringify(queries.data);
 
@@ -261,9 +243,8 @@ class Schema {
                     ]);
 
                     if (response.status != 200) {
-                        UIUtils.showItemError(tableName, `Error executing: ${response.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(response.status, response.message);
+                        break;
                     }
 
                     await TableProcessor.saveQuery(dml.data.table, dml.data.database, createQuery);
@@ -338,9 +319,8 @@ class Schema {
                     ]);
 
                     if (response.status != 200) {
-                        UIUtils.showItemError(seederName, `Error executing: ${response.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(response.status, response.message);
+                        break;
                     }
 
                     UIUtils.showItemSuccess(seederName);
@@ -414,9 +394,8 @@ class Schema {
                     ]);
 
                     if (response.status != 200) {
-                        UIUtils.showItemError(triggerName, `Error executing: ${response.message}`);
-                        errorCount++;
-                        continue;
+                        returnFormattedError(response.status, response.message);
+                        break;
                     }
 
                     UIUtils.showItemSuccess(triggerName);

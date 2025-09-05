@@ -100,11 +100,5 @@ export class UIUtils {
 
         console.log(`${chalk.blue('├─')} ${chalk.gray(`Total time: ${totalTime}s`)}`);
         console.log(`${chalk.blue('└─')} ${chalk.bold(totalProcessed > 0 ? chalk.green('✅ Completed') : chalk.yellow('⚠️  No changes'))}`);
-
-        if (totalProcessed > 0) {
-            console.log(`\n${chalk.green('🎉')} ${chalk.bold(`${operationName} executed successfully!`)}`);
-        } else {
-            console.log(`\n${chalk.yellow('⚠️ ')} ${chalk.bold('No items were processed.')}`);
-        }
     }
 }
