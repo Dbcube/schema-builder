@@ -4,6 +4,8 @@ import path from 'path';
 import FileUtils from './FileUtils';
 import chalk from 'chalk';
 import { UIUtils, ProcessSummary, ProcessError } from './UIUtils';
+import { CubeValidator } from './CubeValidator';
+import { DependencyResolver } from './DependencyResolver';
 
 /**
  * Main class to handle MySQL database connections and queries.
@@ -19,12 +21,24 @@ class Schema {
     }
 
     /**
-     * Validates that the database specified in cube file exists in configuration
+     * Validates cube file comprehensively including syntax, database configuration, and structure
      * @param filePath - Path to the cube file
-     * @returns true if valid, throws error if invalid
+     * @returns validation result with any errors found
      */
     private validateDatabaseConfiguration(filePath: string): { isValid: boolean; error?: ProcessError } {
         try {
+            // First, perform comprehensive cube file validation
+            const cubeValidator = new CubeValidator();
+            const cubeValidation = cubeValidator.validateCubeFile(filePath);
+            
+            // If cube file has syntax errors, return the first one
+            if (!cubeValidation.isValid && cubeValidation.errors.length > 0) {
+                return {
+                    isValid: false,
+                    error: cubeValidation.errors[0] // Return the first error found
+                };
+            }
+
             // Extract database name from cube file
             const dbResult = FileUtils.extractDatabaseNameFromCube(filePath);
             if (dbResult.status !== 200) {
@@ -119,6 +133,77 @@ class Schema {
         }
     }
 
+    /**
+     * Extracts foreign key dependencies from a cube file
+     */
+    private extractForeignKeyDependencies(filePath: string): string[] {
+        const dependencies: string[] = [];
+        
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const lines = content.split('\n');
+            
+            let insideForeignKey = false;
+            let braceCount = 0;
+            
+            for (const line of lines) {
+                // Check for foreign key start
+                if (/foreign\s*:\s*\{/.test(line)) {
+                    insideForeignKey = true;
+                    braceCount = 1;
+                    
+                    // Check if table is on the same line
+                    const sameLineMatch = line.match(/table\s*:\s*["']([^"']+)["']/);
+                    if (sameLineMatch) {
+                        dependencies.push(sameLineMatch[1]);
+                        insideForeignKey = false;
+                        braceCount = 0;
+                    }
+                    continue;
+                }
+                
+                if (insideForeignKey) {
+                    // Count braces to track if we're still inside the foreign object
+                    braceCount += (line.match(/\{/g) || []).length;
+                    braceCount -= (line.match(/\}/g) || []).length;
+                    
+                    // Look for table reference
+                    const tableMatch = line.match(/table\s*:\s*["']([^"']+)["']/);
+                    if (tableMatch) {
+                        dependencies.push(tableMatch[1]);
+                    }
+                    
+                    // If braces are balanced, we're out of the foreign object
+                    if (braceCount === 0) {
+                        insideForeignKey = false;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`Error reading dependencies from ${filePath}:`, error);
+        }
+        
+        return dependencies;
+    }
+
+    /**
+     * Finds the line number where a foreign key table reference is located
+     */
+    private findForeignKeyLineNumber(filePath: string, tableName: string): number {
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const lines = content.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].includes(`table: "${tableName}"`) || lines[i].includes(`table: '${tableName}'`)) {
+                    return i + 1; // Line numbers start at 1
+                }
+            }
+            return 1;
+        } catch {
+            return 1;
+        }
+    }
+
     async createDatabase(): Promise<any> {
         const startTime = Date.now();
         const rootPath = path.resolve(process.cwd());
@@ -187,6 +272,12 @@ class Schema {
             throw new Error('❌ There are no cubes to execute');
         }
 
+        // Resolve dependencies and create execution order
+        DependencyResolver.resolveDependencies(cubeFiles, 'table');
+        
+        // Order files based on dependencies
+        const orderedCubeFiles = DependencyResolver.orderCubeFiles(cubeFiles, 'table');
+
         // Show header
         UIUtils.showOperationHeader('EXECUTING REFRESH TABLES', this.name, '🔄');
 
@@ -195,9 +286,10 @@ class Schema {
         let errorCount = 0;
         const processedTables: string[] = [];
         const errors: ProcessError[] = [];
+        const failedTables = new Set<string>(); // Track failed table names
 
-        for (let index = 0; index < cubeFiles.length; index++) {
-            const file = cubeFiles[index];
+        for (let index = 0; index < orderedCubeFiles.length; index++) {
+            const file = orderedCubeFiles[index];
             const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
             const stats = fs.statSync(filePath);
 
@@ -206,7 +298,7 @@ class Schema {
                 const tableName = getTableName.status === 200 ? getTableName.message : path.basename(file, '.table.cube');
 
                 // Show visual progress for each table
-                await UIUtils.showItemProgress(tableName, index + 1, cubeFiles.length);
+                await UIUtils.showItemProgress(tableName, index + 1, orderedCubeFiles.length);
 
                 try {
                     // Validate database configuration before processing
@@ -214,6 +306,25 @@ class Schema {
                     if (!validation.isValid && validation.error) {
                         UIUtils.showItemError(tableName, validation.error.error);
                         errors.push(validation.error);
+                        failedTables.add(tableName);
+                        errorCount++;
+                        continue;
+                    }
+
+                    // Check if any dependent tables failed
+                    const dependencies = this.extractForeignKeyDependencies(filePath);
+                    const missingDependencies = dependencies.filter(dep => failedTables.has(dep));
+                    
+                    if (missingDependencies.length > 0) {
+                        const dependencyError: ProcessError = {
+                            itemName: tableName,
+                            error: `Cannot refresh table '${tableName}' because it depends on failed table(s): ${missingDependencies.join(', ')}`,
+                            filePath,
+                            lineNumber: this.findForeignKeyLineNumber(filePath, missingDependencies[0])
+                        };
+                        UIUtils.showItemError(tableName, dependencyError.error);
+                        errors.push(dependencyError);
+                        failedTables.add(tableName);
                         errorCount++;
                         continue;
                     }
@@ -269,6 +380,7 @@ class Schema {
                     };
                     UIUtils.showItemError(tableName, error.message);
                     errors.push(processError);
+                    failedTables.add(tableName);
                     errorCount++;
                 }
             }
@@ -304,6 +416,12 @@ class Schema {
             throw new Error('❌ There are no cubes to execute');
         }
 
+        // Resolve dependencies and create execution order
+        DependencyResolver.resolveDependencies(cubeFiles, 'table');
+        
+        // Order files based on dependencies
+        const orderedCubeFiles = DependencyResolver.orderCubeFiles(cubeFiles, 'table');
+
         // Show header
         UIUtils.showOperationHeader('EXECUTING FRESH TABLES', this.name);
 
@@ -312,9 +430,10 @@ class Schema {
         let errorCount = 0;
         const processedTables: string[] = [];
         const errors: ProcessError[] = [];
+        const failedTables = new Set<string>(); // Track failed table names
 
-        for (let index = 0; index < cubeFiles.length; index++) {
-            const file = cubeFiles[index];
+        for (let index = 0; index < orderedCubeFiles.length; index++) {
+            const file = orderedCubeFiles[index];
             const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
             const stats = fs.statSync(filePath);
 
@@ -323,7 +442,7 @@ class Schema {
                 const tableName = getTableName.status === 200 ? getTableName.message : path.basename(file, '.table.cube');
 
                 // Show visual progress for each table
-                await UIUtils.showItemProgress(tableName, index + 1, cubeFiles.length);
+                await UIUtils.showItemProgress(tableName, index + 1, orderedCubeFiles.length);
 
                 try {
                     // Validate database configuration before processing
@@ -331,6 +450,25 @@ class Schema {
                     if (!validation.isValid && validation.error) {
                         UIUtils.showItemError(tableName, validation.error.error);
                         errors.push(validation.error);
+                        failedTables.add(tableName);
+                        errorCount++;
+                        continue;
+                    }
+
+                    // Check if any dependent tables failed
+                    const dependencies = this.extractForeignKeyDependencies(filePath);
+                    const missingDependencies = dependencies.filter(dep => failedTables.has(dep));
+                    
+                    if (missingDependencies.length > 0) {
+                        const dependencyError: ProcessError = {
+                            itemName: tableName,
+                            error: `Cannot create table '${tableName}' because it depends on failed table(s): ${missingDependencies.join(', ')}`,
+                            filePath,
+                            lineNumber: this.findForeignKeyLineNumber(filePath, missingDependencies[0])
+                        };
+                        UIUtils.showItemError(tableName, dependencyError.error);
+                        errors.push(dependencyError);
+                        failedTables.add(tableName);
                         errorCount++;
                         continue;
                     }
@@ -392,6 +530,7 @@ class Schema {
                     };
                     UIUtils.showItemError(tableName, error.message);
                     errors.push(processError);
+                    failedTables.add(tableName);
                     errorCount++;
                 }
             }
@@ -429,6 +568,9 @@ class Schema {
             throw new Error('❌ There are no cubes to execute');
         }
 
+        // Use existing table dependency order for seeders
+        const orderedCubeFiles = DependencyResolver.orderCubeFiles(cubeFiles, 'seeder');
+
         // Show header
         UIUtils.showOperationHeader('EXECUTING SEEDERS', this.name, '🌱');
 
@@ -438,8 +580,8 @@ class Schema {
         const processedSeeders: string[] = [];
         const errors: ProcessError[] = [];
 
-        for (let index = 0; index < cubeFiles.length; index++) {
-            const file = cubeFiles[index];
+        for (let index = 0; index < orderedCubeFiles.length; index++) {
+            const file = orderedCubeFiles[index];
             const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
             const stats = fs.statSync(filePath);
 
@@ -448,7 +590,7 @@ class Schema {
                 const seederName = getSeederName.status === 200 ? getSeederName.message : path.basename(file, '.seeder.cube');
 
                 // Show visual progress for each seeder
-                await UIUtils.showItemProgress(seederName, index + 1, cubeFiles.length);
+                await UIUtils.showItemProgress(seederName, index + 1, orderedCubeFiles.length);
 
                 try {
                     // Validate database configuration before processing
