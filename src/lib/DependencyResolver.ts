@@ -50,8 +50,8 @@ export class DependencyResolver {
                 // File exists in current directory
                 filePath = path.resolve(file);
             } else {
-                // Try the standard dbcube cubes directory
-                filePath = path.join(process.cwd(), 'dbcube', 'cubes', file);
+                // Try the standard dbcube directory (files are now directly in dbcube folder)
+                filePath = path.join(process.cwd(), 'dbcube', file);
             }
             
             try {
@@ -254,7 +254,7 @@ export class DependencyResolver {
         
         // Create a map of table names to file paths
         for (const file of cubeFiles) {
-            const filePath = path.isAbsolute(file) ? file : path.join(process.cwd(), 'dbcube', 'cubes', file);
+            const filePath = path.isAbsolute(file) ? file : path.join(process.cwd(), 'dbcube', file);
             const tableNameResult = FileUtils.extracTableNameFromCube(filePath);
             const tableName = tableNameResult.status === 200 ? tableNameResult.message : path.basename(file, `.${cubeType}.cube`);
             fileMap.set(tableName, file);

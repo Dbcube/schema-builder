@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@dbcube/core':
-        specifier: ^1.0.7
-        version: 1.0.7
+        specifier: ^1.0.8
+        version: 1.0.8
       chalk:
         specifier: ^5.6.0
         version: 5.6.0
@@ -33,8 +33,8 @@ importers:
 
 packages:
 
-  '@dbcube/core@1.0.7':
-    resolution: {integrity: sha512-YZfBIS+S6nI08PuYzVYJE656THLGFF2s+JN/4+oMJhaJh4FQ1XxONKb1TZMHn3mxwx5zBg9HhA2bTOmQ2p94Vg==}
+  '@dbcube/core@1.0.8':
+    resolution: {integrity: sha512-7Vekgua1JLodATFm9bj9n+TJtyL5sPnSpCMgTOiWhbjE3H6PZJysjhD9hNDEGumpDdJ4x8V7bQ2xqMFcd9burQ==}
 
   '@esbuild/aix-ppc64@0.25.9':
     resolution: {integrity: sha512-OaGtL73Jck6pBKjNIe24BnFE6agGl+6KxDtTfHhy1HmhthfKouEcOhqpSL64K4/0WCtbKFLOdzD/44cJ4k9opA==}
@@ -910,7 +910,7 @@ packages:
 
 snapshots:
 
-  '@dbcube/core@1.0.7':
+  '@dbcube/core@1.0.8':
     dependencies:
       better-sqlite3: 12.2.0
       follow-redirects: 1.15.11

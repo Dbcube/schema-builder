@@ -1,6 +1,6 @@
 {
   "name": "@dbcube/schema-builder",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "The DBCube Query Builder is a lightweight, flexible, and fluent library for building queries across multiple database engines, including MySQL, PostgreSQL, SQLite, and MongoDB, using JavaScript/Node.js. \nIts agnostic design allows you to generate data manipulation (DML) and data definition (DDL) operations with a clean, chainable syntax—without sacrificing power or expressiveness.\nIt’s designed to work seamlessly in both SQL and NoSQL environments, providing a consistent abstraction layer across different storage technologies while still leveraging the native capabilities of each engine.",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -54,7 +54,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@dbcube/core": "^1.0.7",
+    "@dbcube/core": "^1.0.8",
     "chalk": "^5.6.0",
     "ora": "^8.2.0"
   },

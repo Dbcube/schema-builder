@@ -260,14 +260,14 @@ class Schema {
 
     async refreshTables(): Promise<any> {
         const startTime = Date.now();
-        const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
+        const cubesDir = path.join(process.cwd(), 'dbcube');
 
         // Verificar si la carpeta existe
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
         }
 
-        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', 'table.cube');
+        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.table.cube');
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
         }
@@ -404,14 +404,14 @@ class Schema {
 
     async freshTables(): Promise<any> {
         const startTime = Date.now();
-        const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
+        const cubesDir = path.join(process.cwd(), 'dbcube');
 
         // Verificar si la carpeta existe
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
         }
 
-        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', 'table.cube');
+        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.table.cube');
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
         }
@@ -555,14 +555,14 @@ class Schema {
 
     async executeSeeders(): Promise<any> {
         const startTime = Date.now();
-        const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
+        const cubesDir = path.join(process.cwd(), 'dbcube');
 
         // Verificar si la carpeta existe
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
         }
 
-        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', 'seeder.cube');
+        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.seeder.cube');
 
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
@@ -648,7 +648,7 @@ class Schema {
 
     async executeTriggers(): Promise<any> {
         const startTime = Date.now();
-        const cubesDir = path.join(process.cwd(), 'dbcube', 'cubes');
+        const cubesDir = path.join(process.cwd(), 'dbcube');
         const triggersDirExit = path.join(process.cwd(), 'dbcube', 'triggers');
 
         // Verificar si la carpeta existe
@@ -656,7 +656,7 @@ class Schema {
             throw new Error('❌ The cubes folder does not exist');
         }
 
-        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', 'trigger.cube');
+        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.trigger.cube');
 
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
