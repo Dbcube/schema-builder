@@ -6,6 +6,7 @@ import chalk from 'chalk';
 import { UIUtils, ProcessSummary, ProcessError } from './UIUtils';
 import { CubeValidator } from './CubeValidator';
 import { DependencyResolver } from './DependencyResolver';
+import { createRequire } from 'module';
 
 /**
  * Main class to handle MySQL database connections and queries.
@@ -30,7 +31,7 @@ class Schema {
             // First, perform comprehensive cube file validation
             const cubeValidator = new CubeValidator();
             const cubeValidation = cubeValidator.validateCubeFile(filePath);
-            
+
             // If cube file has syntax errors, return the first one
             if (!cubeValidation.isValid && cubeValidation.errors.length > 0) {
                 return {
@@ -58,7 +59,14 @@ class Schema {
             // Get available configurations
             const configInstance = new ConfigClass();
             const configFilePath = path.resolve(process.cwd(), 'dbcube.config.js');
-            const configFn = require(configFilePath);
+
+            // Use __filename for CJS, process.cwd() for ESM
+            const requireUrl = typeof __filename !== 'undefined' ? __filename : process.cwd();
+            const require = createRequire(requireUrl);
+            // Clear require cache to ensure fresh load
+            delete require.cache[require.resolve(configFilePath)];
+            const configModule = require(configFilePath);
+            const configFn = configModule.default || configModule;
 
             if (typeof configFn === 'function') {
                 configFn(configInstance);
@@ -138,20 +146,20 @@ class Schema {
      */
     private extractForeignKeyDependencies(filePath: string): string[] {
         const dependencies: string[] = [];
-        
+
         try {
             const content = fs.readFileSync(filePath, 'utf8');
             const lines = content.split('\n');
-            
+
             let insideForeignKey = false;
             let braceCount = 0;
-            
+
             for (const line of lines) {
                 // Check for foreign key start
                 if (/foreign\s*:\s*\{/.test(line)) {
                     insideForeignKey = true;
                     braceCount = 1;
-                    
+
                     // Check if table is on the same line
                     const sameLineMatch = line.match(/table\s*:\s*["']([^"']+)["']/);
                     if (sameLineMatch) {
@@ -161,18 +169,18 @@ class Schema {
                     }
                     continue;
                 }
-                
+
                 if (insideForeignKey) {
                     // Count braces to track if we're still inside the foreign object
                     braceCount += (line.match(/\{/g) || []).length;
                     braceCount -= (line.match(/\}/g) || []).length;
-                    
+
                     // Look for table reference
                     const tableMatch = line.match(/table\s*:\s*["']([^"']+)["']/);
                     if (tableMatch) {
                         dependencies.push(tableMatch[1]);
                     }
-                    
+
                     // If braces are balanced, we're out of the foreign object
                     if (braceCount === 0) {
                         insideForeignKey = false;
@@ -182,7 +190,7 @@ class Schema {
         } catch (error) {
             console.error(`Error reading dependencies from ${filePath}:`, error);
         }
-        
+
         return dependencies;
     }
 
@@ -274,7 +282,7 @@ class Schema {
 
         // Resolve dependencies and create execution order
         DependencyResolver.resolveDependencies(cubeFiles, 'table');
-        
+
         // Order files based on dependencies
         const orderedCubeFiles = DependencyResolver.orderCubeFiles(cubeFiles, 'table');
 
@@ -314,7 +322,7 @@ class Schema {
                     // Check if any dependent tables failed
                     const dependencies = this.extractForeignKeyDependencies(filePath);
                     const missingDependencies = dependencies.filter(dep => failedTables.has(dep));
-                    
+
                     if (missingDependencies.length > 0) {
                         const dependencyError: ProcessError = {
                             itemName: tableName,
@@ -418,7 +426,7 @@ class Schema {
 
         // Resolve dependencies and create execution order
         DependencyResolver.resolveDependencies(cubeFiles, 'table');
-        
+
         // Order files based on dependencies
         const orderedCubeFiles = DependencyResolver.orderCubeFiles(cubeFiles, 'table');
 
@@ -458,7 +466,7 @@ class Schema {
                     // Check if any dependent tables failed
                     const dependencies = this.extractForeignKeyDependencies(filePath);
                     const missingDependencies = dependencies.filter(dep => failedTables.has(dep));
-                    
+
                     if (missingDependencies.length > 0) {
                         const dependencyError: ProcessError = {
                             itemName: tableName,
@@ -787,8 +795,6 @@ function returnFormattedError(status: number, message: string) {
     }
 
     console.log('');
-
-    process.exit(1);
 }
 
 export default Schema;
