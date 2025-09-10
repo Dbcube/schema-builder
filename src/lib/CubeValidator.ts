@@ -71,10 +71,13 @@ export class CubeValidator {
     }
 
     private validateAnnotations(line: string, lineNumber: number, filePath: string, fileName: string, errors: ProcessError[]): void {
+        // Remove content inside strings to avoid false positives
+        const lineWithoutStrings = line.replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
+        
         const annotationRegex = /@(\w+)/g;
         let match;
         
-        while ((match = annotationRegex.exec(line)) !== null) {
+        while ((match = annotationRegex.exec(lineWithoutStrings)) !== null) {
             const annotation = match[1];
             
             if (!this.knownAnnotations.includes(annotation)) {

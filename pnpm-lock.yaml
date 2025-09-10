@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@dbcube/core':
-        specifier: ^1.0.51
-        version: 1.0.51
+        specifier: ^1.0.65
+        version: 1.0.65
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -33,8 +33,8 @@ importers:
 
 packages:
 
-  '@dbcube/core@1.0.51':
-    resolution: {integrity: sha512-pi5pfWbr5VVz0YCR2+RXkcXMlVS/zdhPX+4XUXwKg6cglf633huJyBZCwwEqtsdiCiBhBOLshaVKsWuIsJcjew==}
+  '@dbcube/core@1.0.65':
+    resolution: {integrity: sha512-eeMX4Db8NzWK1LUyhmUY74HsljEJBlVgyK6FPozYBw+6yG76/NM6+7e8YWOqB/TuzuduFGp86xdf7WjRMwqg6Q==}
     hasBin: true
 
   '@esbuild/aix-ppc64@0.25.9':
@@ -482,8 +482,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  get-east-asian-width@1.3.1:
-    resolution: {integrity: sha512-R1QfovbPsKmosqTnPoRFiJ7CF9MLRgb53ChvMZm+r4p76/+8yKDy17qLL2PKInORy2RkZZekuK0efYgmzTkXyQ==}
+  get-east-asian-width@1.4.0:
+    resolution: {integrity: sha512-QZjmEOC+IT1uk6Rx0sX22V6uHWVwbdbxf1faPqJ1QhLdGgsRGCZoyaQBm/piRdJy/D2um6hM1UP7ZEeQ4EkP+Q==}
     engines: {node: '>=18'}
 
   glob@10.4.5:
@@ -801,7 +801,7 @@ packages:
 
 snapshots:
 
-  '@dbcube/core@1.0.51':
+  '@dbcube/core@1.0.65':
     dependencies:
       chalk: 5.6.2
       deasync: 0.1.30
@@ -1127,7 +1127,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  get-east-asian-width@1.3.1: {}
+  get-east-asian-width@1.4.0: {}
 
   glob@10.4.5:
     dependencies:
@@ -1340,7 +1340,7 @@ snapshots:
   string-width@7.2.0:
     dependencies:
       emoji-regex: 10.5.0
-      get-east-asian-width: 1.3.1
+      get-east-asian-width: 1.4.0
       strip-ansi: 7.1.2
 
   string_decoder@1.1.1:
