@@ -243,15 +243,17 @@ export class DependencyResolver {
      */
     static orderCubeFiles(cubeFiles: string[], cubeType: 'table' | 'seeder'): string[] {
         const executionOrder = this.loadExecutionOrder();
-        
+
         if (!executionOrder) {
             return cubeFiles;
         }
-        
-        const orderList = cubeType === 'table' ? executionOrder.tables : executionOrder.seeders;
+
+        // IMPORTANTE: Los seeders SIEMPRE usan el orden de las tablas
+        // porque deben insertar datos respetando las foreign keys
+        const orderList = executionOrder.tables;
         const orderedFiles: string[] = [];
         const fileMap = new Map<string, string>();
-        
+
         // Create a map of table names to file paths
         for (const file of cubeFiles) {
             const filePath = path.isAbsolute(file) ? file : path.join(process.cwd(), 'dbcube', file);
@@ -259,22 +261,22 @@ export class DependencyResolver {
             const tableName = tableNameResult.status === 200 ? tableNameResult.message : path.basename(file, `.${cubeType}.cube`);
             fileMap.set(tableName, file);
         }
-        
-        // Order files according to execution order
+
+        // Order files according to execution order (using table order)
         for (const tableName of orderList) {
             if (fileMap.has(tableName)) {
                 orderedFiles.push(fileMap.get(tableName)!);
                 fileMap.delete(tableName);
             }
         }
-        
+
         // Add any remaining files that weren't in the order
         for (const [, file] of fileMap) {
             orderedFiles.push(file);
         }
-        
+
         // Using dependency order silently
-        
+
         return orderedFiles;
     }
 }
