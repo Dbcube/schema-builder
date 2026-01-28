@@ -135,18 +135,28 @@ export class DependencyResolver {
         const graph = new Map<string, string[]>();
         const inDegree = new Map<string, number>();
         const tableMap = new Map<string, TableDependency>();
-        
-        // Build graph and initialize in-degree
+
+        // Initialize graph and in-degree for all tables
         for (const dep of dependencies) {
-            graph.set(dep.tableName, dep.dependencies);
+            if (!graph.has(dep.tableName)) {
+                graph.set(dep.tableName, []);
+            }
             inDegree.set(dep.tableName, 0);
             tableMap.set(dep.tableName, dep);
         }
-        
-        // Calculate in-degrees
+
+        // Build reverse graph: for each table that A depends on, add A as a dependent of that table
+        // This allows Kahn's algorithm to work: when we process a table, we can reduce
+        // the in-degree of all tables that depend on it
         for (const dep of dependencies) {
             for (const dependency of dep.dependencies) {
+                // If dependency exists in our table list, add edge: dependency -> dep.tableName
                 if (inDegree.has(dependency)) {
+                    if (!graph.has(dependency)) {
+                        graph.set(dependency, []);
+                    }
+                    graph.get(dependency)!.push(dep.tableName);
+                    // Increase in-degree of the table that has the dependency
                     inDegree.set(dep.tableName, (inDegree.get(dep.tableName) || 0) + 1);
                 }
             }
