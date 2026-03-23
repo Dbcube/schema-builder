@@ -337,6 +337,10 @@ class Schema {
                         continue;
                     }
 
+                    const dbResult = FileUtils.extractDatabaseNameFromCube(filePath);
+                    const cubeDbName = dbResult.status === 200 ? dbResult.message : this.name;
+                    if (cubeDbName !== this.name) { continue; }
+
                     const dml = await this.engine.run('schema_engine', [
                         '--action', 'parse_table',
                         '--mode', 'refresh',
@@ -481,6 +485,10 @@ class Schema {
                         continue;
                     }
 
+                    const dbResult = FileUtils.extractDatabaseNameFromCube(filePath);
+                    const cubeDbName = dbResult.status === 200 ? dbResult.message : this.name;
+                    if (cubeDbName !== this.name) { continue; }
+
                     const dml = await this.engine.run('schema_engine', [
                         '--action', 'parse_table',
                         '--schema-path', filePath,
@@ -610,6 +618,10 @@ class Schema {
                         continue;
                     }
 
+                    const dbResult = FileUtils.extractDatabaseNameFromCube(filePath);
+                    const cubeDbName = dbResult.status === 200 ? dbResult.message : this.name;
+                    if (cubeDbName !== this.name) { continue; }
+
                     const response = await this.engine.run('schema_engine', [
                         '--action', 'seeder',
                         '--schema-path', filePath,
@@ -652,6 +664,131 @@ class Schema {
         UIUtils.showOperationSummary(summary);
 
         return totalSeedersProcessed > 0 ? { processed: totalSeedersProcessed, success: successCount, errors: errorCount } : null;
+    }
+
+    async executeAlters(): Promise<any> {
+        const startTime = Date.now();
+        const cubesDir = path.join(process.cwd(), 'dbcube');
+
+        if (!fs.existsSync(cubesDir)) {
+            throw new Error('❌ The cubes folder does not exist');
+        }
+
+        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.alter.cube');
+
+        if (cubeFiles.length === 0) {
+            throw new Error('❌ There are no .alter.cube files to execute');
+        }
+
+        // Show header
+        UIUtils.showOperationHeader('EXECUTING ALTER TABLES', this.name, '🔧');
+
+        let totalAltersProcessed = 0;
+        let successCount = 0;
+        let errorCount = 0;
+        const processedAlters: string[] = [];
+        const errors: ProcessError[] = [];
+
+        for (let index = 0; index < cubeFiles.length; index++) {
+            const file = cubeFiles[index];
+            const filePath = path.isAbsolute(file) ? file : path.join(cubesDir, file);
+            const stats = fs.statSync(filePath);
+
+            if (stats.isFile()) {
+                const alterName = path.basename(file, '.alter.cube');
+
+                // Show visual progress
+                await UIUtils.showItemProgress(alterName, index + 1, cubeFiles.length);
+
+                try {
+                    // Validate database configuration before processing
+                    const validation = this.validateDatabaseConfiguration(filePath);
+                    if (!validation.isValid && validation.error) {
+                        UIUtils.showItemError(alterName, validation.error.error);
+                        errors.push(validation.error);
+                        errorCount++;
+                        continue;
+                    }
+
+                    const dbResult = FileUtils.extractDatabaseNameFromCube(filePath);
+                    const cubeDbName = dbResult.status === 200 ? dbResult.message : this.name;
+                    if (cubeDbName !== this.name) { continue; }
+
+                    // Parse the .alter.cube file
+                    const dml = await this.engine.run('schema_engine', [
+                        '--action', 'parse_alter',
+                        '--schema-path', filePath,
+                    ]);
+
+                    if (dml.status != 200) {
+                        returnFormattedError(dml.status, dml.message);
+                        break;
+                    }
+
+                    const parseJson = JSON.stringify(dml.data.actions)
+                        .replace(/[\r\n\t]/g, '')
+                        .replace(/\\[rnt]/g, '')
+                        .replace(/\s{2,}/g, ' ');
+
+                    // Generate SQL queries from DML
+                    const queries = await this.engine.run('schema_engine', [
+                        '--action', 'generate',
+                        '--mode', 'alter',
+                        '--dml', parseJson,
+                    ]);
+
+                    if (queries.status != 200) {
+                        returnFormattedError(queries.status, queries.message);
+                        break;
+                    }
+
+                    delete queries.data.database_type;
+                    const parseJsonQueries = JSON.stringify(queries.data);
+
+                    // Execute the ALTER queries
+                    const response = await this.engine.run('schema_engine', [
+                        '--action', 'execute',
+                        '--mode', 'alter',
+                        '--dml', parseJsonQueries,
+                    ]);
+
+                    if (response.status != 200) {
+                        returnFormattedError(response.status, response.message);
+                        break;
+                    }
+
+                    UIUtils.showItemSuccess(alterName);
+                    successCount++;
+                    processedAlters.push(alterName);
+                    totalAltersProcessed++;
+
+                } catch (error: any) {
+                    const processError: ProcessError = {
+                        itemName: alterName,
+                        error: error.message,
+                        filePath
+                    };
+                    UIUtils.showItemError(alterName, error.message);
+                    errors.push(processError);
+                    errorCount++;
+                }
+            }
+        }
+
+        // Show final summary
+        const summary: ProcessSummary = {
+            startTime,
+            totalProcessed: totalAltersProcessed,
+            successCount,
+            errorCount,
+            processedItems: processedAlters,
+            operationName: 'alter tables',
+            databaseName: this.name,
+            errors
+        };
+        UIUtils.showOperationSummary(summary);
+
+        return totalAltersProcessed > 0 ? { processed: totalAltersProcessed, success: successCount, errors: errorCount } : null;
     }
 
     async executeTriggers(): Promise<any> {
@@ -700,6 +837,10 @@ class Schema {
                         errorCount++;
                         continue;
                     }
+
+                    const dbResult = FileUtils.extractDatabaseNameFromCube(filePath);
+                    const cubeDbName = dbResult.status === 200 ? dbResult.message : this.name;
+                    if (cubeDbName !== this.name) { continue; }
 
                     const response = await this.engine.run('schema_engine', [
                         '--action', 'trigger',

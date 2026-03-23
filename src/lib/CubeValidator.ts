@@ -11,7 +11,7 @@ export class CubeValidator {
     private validTypes = ['varchar', 'int', 'string', 'text', 'boolean', 'date', 'datetime', 'timestamp', 'decimal', 'float', 'double', 'enum', 'json'];
     private validOptions = ['not null', 'primary', 'autoincrement', 'unique', 'zerofill', 'index', 'required', 'unsigned'];
     private validProperties = ['type', 'length', 'options', 'value', 'defaultValue', 'foreign', 'enumValues', 'description'];
-    private knownAnnotations = ['database', 'table', 'meta', 'columns', 'fields', 'dataset', 'beforeAdd', 'afterAdd', 'beforeUpdate', 'afterUpdate', 'beforeDelete', 'afterDelete', 'compute', 'column'];
+    private knownAnnotations = ['database', 'table', 'meta', 'columns', 'fields', 'dataset', 'beforeAdd', 'afterAdd', 'beforeUpdate', 'afterUpdate', 'beforeDelete', 'afterDelete', 'compute', 'column', 'changeName', 'addColumn', 'deleteColumn', 'renameColumn', 'changeType', 'changeLength', 'changeDefault', 'changeOptions', 'changeEnumValues'];
 
     /**
      * Validates a cube file comprehensively
@@ -345,6 +345,38 @@ export class CubeValidator {
                 errors.push({
                     itemName: fileName,
                     error: 'Table cube files require @columns annotation',
+                    filePath,
+                    lineNumber: 1
+                });
+            }
+        }
+
+        // For alter.cube files, check for @table annotation
+        if (filePath.includes('.alter.cube')) {
+            const hasTable = lines.some(line => line.includes('@table'));
+            if (!hasTable) {
+                errors.push({
+                    itemName: fileName,
+                    error: 'Alter cube files require @table annotation specifying the target table',
+                    filePath,
+                    lineNumber: 1
+                });
+            }
+            const hasAlterDirective = lines.some(line =>
+                line.includes('@changeName') ||
+                line.includes('@addColumn') ||
+                line.includes('@deleteColumn') ||
+                line.includes('@renameColumn') ||
+                line.includes('@changeType') ||
+                line.includes('@changeLength') ||
+                line.includes('@changeDefault') ||
+                line.includes('@changeOptions') ||
+                line.includes('@changeEnumValues')
+            );
+            if (!hasAlterDirective) {
+                errors.push({
+                    itemName: fileName,
+                    error: 'Alter cube files must contain at least one alter directive (@changeName, @addColumn, @deleteColumn, @renameColumn, @changeType, @changeLength, @changeDefault, @changeOptions, or @changeEnumValues)',
                     filePath,
                     lineNumber: 1
                 });
