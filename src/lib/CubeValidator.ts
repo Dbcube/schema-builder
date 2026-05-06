@@ -8,10 +8,10 @@ export interface ValidationResult {
 }
 
 export class CubeValidator {
-    private validTypes = ['varchar', 'int', 'string', 'text', 'boolean', 'date', 'datetime', 'timestamp', 'decimal', 'float', 'double', 'enum', 'json'];
+    private validTypes = ['varchar', 'int', 'tinyint', 'bigint', 'string', 'text', 'boolean', 'date', 'datetime', 'timestamp', 'decimal', 'float', 'double', 'enum', 'json'];
     private validOptions = ['not null', 'primary', 'autoincrement', 'unique', 'zerofill', 'index', 'required', 'unsigned'];
     private validProperties = ['type', 'length', 'options', 'value', 'defaultValue', 'foreign', 'enumValues', 'description'];
-    private knownAnnotations = ['database', 'table', 'meta', 'columns', 'fields', 'dataset', 'beforeAdd', 'afterAdd', 'beforeUpdate', 'afterUpdate', 'beforeDelete', 'afterDelete', 'compute', 'column', 'changeName', 'addColumn', 'deleteColumn', 'renameColumn', 'changeType', 'changeLength', 'changeDefault', 'changeOptions', 'changeEnumValues'];
+    private knownAnnotations = ['database', 'table', 'meta', 'columns', 'indexes', 'fields', 'dataset', 'beforeAdd', 'afterAdd', 'beforeUpdate', 'afterUpdate', 'beforeDelete', 'afterDelete', 'compute', 'column', 'changeName', 'addColumn', 'deleteColumn', 'renameColumn', 'changeType', 'changeLength', 'changeDefault', 'changeOptions', 'changeEnumValues'];
 
     /**
      * Validates a cube file comprehensively
@@ -181,19 +181,32 @@ export class CubeValidator {
     private validateColumnProperties(line: string, lineNumber: number, filePath: string, fileName: string, errors: ProcessError[], content: string): void {
         const propertyKeyRegex = /^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/;
         const propMatch = propertyKeyRegex.exec(line);
-        
+
         if (!propMatch) return;
 
         const propertyName = propMatch[1];
-        
-        // Skip column definitions (they end with opening brace)
+
+        // Skip column/index definitions (they end with opening brace)
         if (/^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*\{/.test(line)) {
+            return;
+        }
+
+        // Skip if inside @indexes block (properties: columns, unique are valid there)
+        if (this.isInsideIndexesBlock(content, lineNumber - 1)) {
+            const validIndexProperties = ['columns', 'unique'];
+            if (!validIndexProperties.includes(propertyName)) {
+                errors.push({
+                    itemName: fileName,
+                    error: `Invalid index property '${propertyName}'. Valid index properties: ${validIndexProperties.join(', ')}`,
+                    filePath,
+                    lineNumber
+                });
+            }
             return;
         }
 
         // Check if we're inside a foreign key object
         if (this.isInsideForeignKeyObject(content, lineNumber - 1)) {
-            // Inside foreign key object, validate foreign key properties
             const validForeignKeyProperties = ['table', 'column'];
             if (!validForeignKeyProperties.includes(propertyName)) {
                 errors.push({
@@ -203,7 +216,7 @@ export class CubeValidator {
                     lineNumber
                 });
             }
-            return; // Skip other validation for foreign key properties
+            return;
         }
 
         // Check if we're inside a columns block and validate property
@@ -227,6 +240,31 @@ export class CubeValidator {
                 lineNumber
             });
         }
+    }
+
+    private isInsideIndexesBlock(content: string, lineIndex: number): boolean {
+        const lines = content.split('\n');
+        let indexesStartLine = -1;
+        let indexesEndLine = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('@indexes')) {
+                indexesStartLine = i;
+                let braceCount = 0;
+                for (let j = i; j < lines.length; j++) {
+                    braceCount += (lines[j].match(/\{/g) || []).length;
+                    braceCount -= (lines[j].match(/\}/g) || []).length;
+                    if (braceCount === 0 && j > i) {
+                        indexesEndLine = j;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        return indexesStartLine !== -1 && indexesEndLine !== -1 &&
+               lineIndex > indexesStartLine && lineIndex < indexesEndLine;
     }
 
     private validateRequiredColumnProperties(lines: string[], lineNumber: number, filePath: string, fileName: string, errors: ProcessError[]): void {

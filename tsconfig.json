@@ -5,11 +5,13 @@
       "declaration": true, // Generar archivos .d.ts
       "declarationDir": "./dist",
       "outDir": "./dist", // Directorio de salida
-      "moduleResolution": "node",
+      "moduleResolution": "bundler",
       "esModuleInterop": true,
       "skipLibCheck": true,
       "strict": true,
-      "allowSyntheticDefaultImports": true
+      "allowSyntheticDefaultImports": true,
+      "rootDir": ".",
+      "types": ["node"]
     },
     "include": ["src/**/*", "checkEnv.js"], // Incluye los archivos TypeScript
     "exclude": ["node_modules", "dist"]

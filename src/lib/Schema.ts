@@ -569,7 +569,7 @@ class Schema {
     }
 
 
-    async executeSeeders(): Promise<any> {
+    async executeSeeders(filterName?: string): Promise<any> {
         const startTime = Date.now();
         const cubesDir = path.join(process.cwd(), 'dbcube');
 
@@ -578,10 +578,18 @@ class Schema {
             throw new Error('❌ The cubes folder does not exist');
         }
 
-        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.seeder.cube');
+        let cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.seeder.cube');
 
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no cubes to execute');
+        }
+
+        if (filterName) {
+            const normalized = filterName.replace(/\.seeder\.cube$/, '').replace(/\.seeder$/, '');
+            cubeFiles = cubeFiles.filter(file => path.basename(file, '.seeder.cube') === normalized);
+            if (cubeFiles.length === 0) {
+                throw new Error(`❌ Seeder '${filterName}' not found. Make sure the file '${normalized}.seeder.cube' exists in the dbcube folder.`);
+            }
         }
 
         // Use existing table dependency order for seeders
