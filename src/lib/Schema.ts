@@ -361,7 +361,23 @@ class Schema {
                         returnFormattedError(queries.status, queries.message);
                         break;
                     }
+                    const dbType = queries.data.database_type ?? this.engine.getConfig?.()?.type;
                     delete queries.data.database_type;
+
+                    // Refresh no-destructivo: si la tabla ya tiene esquema registrado,
+                    // reemplazar el CREATE por las diferencias (ALTERs); si es nueva,
+                    // generateAlterQueries devuelve el CREATE tal cual.
+                    const generatedCreate = (queries.data.regular_queries ?? []).filter((q: string) => q.includes('CREATE'))[0];
+                    if (generatedCreate) {
+                        const diffQueries = await TableProcessor.generateAlterQueries(
+                            generatedCreate,
+                            dbType,
+                            dml.data.table,
+                            dml.data.database,
+                        );
+                        const nonCreate = (queries.data.regular_queries ?? []).filter((q: string) => !q.includes('CREATE'));
+                        queries.data.regular_queries = [...diffQueries, ...nonCreate];
+                    }
 
                     const parseJsonQueries = JSON.stringify(queries.data);
 
@@ -674,15 +690,21 @@ class Schema {
         return totalSeedersProcessed > 0 ? { processed: totalSeedersProcessed, success: successCount, errors: errorCount } : null;
     }
 
-    async executeAlters(): Promise<any> {
+    async executeAlters(filterFiles?: string[] | null, options: { dryRun?: boolean } = {}): Promise<any> {
         const startTime = Date.now();
         const cubesDir = path.join(process.cwd(), 'dbcube');
+        const dryRun = options.dryRun === true;
 
         if (!fs.existsSync(cubesDir)) {
             throw new Error('❌ The cubes folder does not exist');
         }
 
-        const cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.alter.cube');
+        let cubeFiles = FileUtils.getCubeFilesRecursively('dbcube', '.alter.cube');
+
+        if (filterFiles && filterFiles.length > 0) {
+            const wanted = new Set(filterFiles.map(f => path.basename(f)));
+            cubeFiles = cubeFiles.filter((f: string) => wanted.has(path.basename(f)));
+        }
 
         if (cubeFiles.length === 0) {
             throw new Error('❌ There are no .alter.cube files to execute');
@@ -752,6 +774,23 @@ class Schema {
 
                     delete queries.data.database_type;
                     const parseJsonQueries = JSON.stringify(queries.data);
+
+                    if (dryRun) {
+                        // Dry run: print the SQL that WOULD run, don't touch the database
+                        console.log(`\n${chalk.cyan('── dry-run ──')} ${chalk.bold(alterName)}`);
+                        const allQueries = [
+                            ...(queries.data.regular_queries ?? []),
+                            ...(queries.data.special_queries ?? []),
+                        ];
+                        for (const q of allQueries) {
+                            console.log(`  ${chalk.gray('SQL>')} ${q}`);
+                        }
+                        UIUtils.showItemSuccess(alterName + ' (dry-run)');
+                        successCount++;
+                        processedAlters.push(alterName);
+                        totalAltersProcessed++;
+                        continue;
+                    }
 
                     // Execute the ALTER queries
                     const response = await this.engine.run('schema_engine', [
