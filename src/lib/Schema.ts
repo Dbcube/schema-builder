@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { Engine, TableProcessor, Config as ConfigClass } from "@dbcube/core";
+import { Engine, TableProcessor, Config as ConfigClass, EnvLoader } from "@dbcube/core";
 import path from 'path';
 import FileUtils from './FileUtils';
 import chalk from 'chalk';
@@ -58,7 +58,13 @@ class Schema {
 
             // Get available configurations
             const configInstance = new ConfigClass();
-            const configFilePath = path.resolve(process.cwd(), 'dbcube.config.js');
+            // Carga automática de .env (sin dotenv).
+            EnvLoader.load();
+            // En proyectos ESM, dbcube.config.cjs se carga con require() y el .js no.
+            const cjsPath = path.resolve(process.cwd(), 'dbcube.config.cjs');
+            const configFilePath = fs.existsSync(cjsPath)
+                ? cjsPath
+                : path.resolve(process.cwd(), 'dbcube.config.js');
 
             // Use __filename for CJS, process.cwd() for ESM
             const requireUrl = typeof __filename !== 'undefined' ? __filename : process.cwd();
@@ -71,32 +77,22 @@ class Schema {
             if (typeof configFn === 'function') {
                 configFn(configInstance);
             } else {
-                throw new Error('❌ The dbcube.config.js file does not export a function.');
+                throw new Error('❌ The dbcube config file does not export a function.');
             }
 
             // Check if the database configuration exists
             const dbConfig = configInstance.getDatabase(cubeDbName);
             if (!dbConfig) {
-                // Try to get available databases by attempting to access common ones
+                // Lista REAL de bases configuradas (antes se adivinaban nombres
+                // comunes y casi siempre salía "none found" aunque hubiera config).
                 let availableDbs: string[] = [];
                 try {
-                    // Try some common database names to see what exists
-                    const testNames = ['test', 'development', 'production', 'local', 'main'];
-                    for (const testName of testNames) {
-                        try {
-                            const testConfig = configInstance.getDatabase(testName);
-                            if (testConfig) {
-                                availableDbs.push(testName);
-                            }
-                        } catch (e) {
-                            // Skip non-existent configs
-                        }
-                    }
+                    availableDbs = Object.keys(configInstance.getAllDatabases() || {});
                 } catch (e) {
-                    // Fallback if we can't determine available databases
+                    // Fallback si no se pueden determinar
                 }
 
-                const availableText = availableDbs.length > 0 ? availableDbs.join(', ') : 'none found';
+                const availableText = availableDbs.length > 0 ? availableDbs.join(', ') : 'none configured';
                 return {
                     isValid: false,
                     error: {
