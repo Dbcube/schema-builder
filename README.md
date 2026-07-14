@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://dbcube.dev">
-    <img src="https://raw.githubusercontent.com/Dbcube/schema-builder/main/assets/banner.png" alt="@dbcube/schema-builder" width="100%">
+    <img src="https://raw.githubusercontent.com/Dbcube/website/main/public/banners/schema-builder.png" alt="@dbcube/schema-builder" width="100%">
   </a>
 </p>
 
