@@ -1,6 +1,12 @@
-# query-builder
+<p align="center">
+  <a href="https://dbcube.dev">
+    <img src="https://raw.githubusercontent.com/Dbcube/schema-builder/main/assets/banner.png" alt="@dbcube/schema-builder" width="100%">
+  </a>
+</p>
 
-The Dbcube Query Builder is a lightweight, flexible, and fluent library for building queries across multiple database engines, including MySQL, PostgreSQL, SQLite, and MongoDB, using JavaScript/Node.js.
+# @dbcube/schema-builder
+
+Turns your `.cube` files into real database structure across MySQL, PostgreSQL, SQLite and MongoDB. Powers the DBCube schema workflow: `.table.cube`, `.alter.cube`, `.seeder.cube` and `.trigger.cube`.
 
 Its agnostic design allows you to generate data manipulation (DML) and data definition (DDL) operations with a clean, chainable syntax—without sacrificing power or expressiveness.
 
