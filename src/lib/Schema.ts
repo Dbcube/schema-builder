@@ -772,14 +772,13 @@ class Schema {
                     const parseJsonQueries = JSON.stringify(queries.data);
 
                     if (dryRun) {
-                        // Dry run: print the SQL that WOULD run, don't touch the database
-                        console.log(`\n${chalk.cyan('── dry-run ──')} ${chalk.bold(alterName)}`);
+                        // Dry run: emite el SQL que SE EJECUTARÍA, sin tocar la base.
                         const allQueries = [
                             ...(queries.data.regular_queries ?? []),
                             ...(queries.data.special_queries ?? []),
                         ];
                         for (const q of allQueries) {
-                            console.log(`  ${chalk.gray('SQL>')} ${q}`);
+                            UIUtils.showRaw(q);
                         }
                         UIUtils.showItemSuccess(alterName + ' (dry-run)');
                         successCount++;
@@ -932,53 +931,33 @@ class Schema {
 }
 
 
+/**
+ * Emite el error por el bus (UIUtils). No imprime: renderizar es trabajo del
+ * CLI, que es quien tiene el idioma y el estilo.
+ */
 function returnFormattedError(status: number, message: string) {
-    console.log(`\n${chalk.red('🚫')} ${chalk.bold.red('ERRORS FOUND')}`);
-    console.log(chalk.red('─'.repeat(60)));
-
-    // Show error with [error] tag format
-    console.log(`${chalk.red('[error]')} ${chalk.red(message)}`);
-    console.log('');
-
     const err = new Error();
     const stackLines = err.stack?.split('\n') || [];
 
-    // Find the first stack line outside of node_modules
+    // Primera línea del stack fuera de node_modules: ubica el origen real.
     const relevantStackLine = stackLines.find(line =>
         line.includes('.js:') && !line.includes('node_modules')
     );
+
+    let filePath: string | undefined;
+    let lineNumber: number | undefined;
 
     if (relevantStackLine) {
         const match = relevantStackLine.match(/\((.*):(\d+):(\d+)\)/) ||
             relevantStackLine.match(/at (.*):(\d+):(\d+)/);
 
         if (match) {
-            const [, filePath, lineStr, columnStr] = match;
-            const lineNum = parseInt(lineStr, 10);
-            const errorLocation = `${filePath}:${lineStr}:${columnStr}`;
-
-            // Show code location with [code] tag format
-            console.log(`${chalk.cyan('[code]')} ${chalk.yellow(errorLocation)}`);
-
-            // Show code context
-            try {
-                const codeLines = fs.readFileSync(filePath, 'utf-8').split('\n');
-                const start = Math.max(0, lineNum - 3);
-                const end = Math.min(codeLines.length, lineNum + 2);
-
-                for (let i = start; i < end; i++) {
-                    const line = codeLines[i];
-                    const lineLabel = `${i + 1}`.padStart(4, ' ');
-                    const pointer = i + 1 === lineNum ? `${chalk.red('<-')}` : '  ';
-                    console.log(`${chalk.gray(lineLabel)} ${pointer}       ${chalk.white(line)}`);
-                }
-            } catch (err) {
-                console.log(chalk.gray('   (unable to show code context)'));
-            }
+            filePath = match[1];
+            lineNumber = parseInt(match[2], 10);
         }
     }
 
-    console.log('');
+    UIUtils.showFatal(message, filePath, lineNumber);
 }
 
 export default Schema;
