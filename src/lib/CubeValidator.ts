@@ -8,9 +8,9 @@ export interface ValidationResult {
 }
 
 export class CubeValidator {
-    private validTypes = ['varchar', 'int', 'tinyint', 'bigint', 'string', 'text', 'boolean', 'date', 'datetime', 'timestamp', 'decimal', 'float', 'double', 'enum', 'json'];
+    private validTypes = ['varchar', 'int', 'tinyint', 'bigint', 'string', 'text', 'boolean', 'date', 'datetime', 'timestamp', 'decimal', 'float', 'double', 'enum', 'json', 'vector', 'blob'];
     private validOptions = ['not null', 'primary', 'autoincrement', 'unique', 'zerofill', 'index', 'required', 'unsigned'];
-    private validProperties = ['type', 'length', 'options', 'value', 'defaultValue', 'foreign', 'enumValues', 'description'];
+    private validProperties = ['type', 'length', 'options', 'value', 'defaultValue', 'foreign', 'enumValues', 'description', 'dimension', 'metric', 'index', 'from', 'model', 'sync'];
     private knownAnnotations = ['database', 'table', 'meta', 'columns', 'indexes', 'fields', 'dataset', 'beforeAdd', 'afterAdd', 'beforeUpdate', 'afterUpdate', 'beforeDelete', 'afterDelete', 'compute', 'column', 'changeName', 'addColumn', 'deleteColumn', 'renameColumn', 'changeType', 'changeLength', 'changeDefault', 'changeOptions', 'changeEnumValues'];
 
     /**
@@ -118,6 +118,22 @@ export class CubeValidator {
                 errors.push({
                     itemName: fileName,
                     error: 'VARCHAR type requires a length specification',
+                    filePath,
+                    lineNumber
+                });
+            }
+        }
+
+        // Vector columns require a dimension (e.g. dimension: 1536).
+        if (line.includes('type: "vector"')) {
+            const lines = content.split('\n');
+            const hasDimensionNearby = lines.slice(Math.max(0, lineNumber - 1), Math.min(lineNumber + 6, lines.length))
+                .some(nextLine => nextLine.includes('dimension:'));
+
+            if (!hasDimensionNearby) {
+                errors.push({
+                    itemName: fileName,
+                    error: 'VECTOR type requires a dimension (e.g. dimension: 1536)',
                     filePath,
                     lineNumber
                 });
