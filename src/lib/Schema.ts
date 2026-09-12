@@ -387,9 +387,14 @@ class Schema {
                         returnFormattedError(response.status, response.message);
                         break;
                     }
-                    const createQuery = queries.data.regular_queries.filter((q: string) => q.includes("CREATE"))[0];
-
-                    await TableProcessor.saveQuery(dml.data.table, dml.data.database, createQuery);
+                    // Lo que se registra es el ESTADO DESEADO completo (el CREATE
+                    // que genero el engine), no lo que se acabo de ejecutar. En
+                    // refresh, regular_queries ya fue sustituido por los ALTERs del
+                    // diff, asi que filtrar "CREATE" aqui daba undefined en cuanto
+                    // la tabla ya existia: saveQuery borraba la fila y el INSERT
+                    // con struct NULL fallaba en silencio, dejando el registro vacio
+                    // y condenando al siguiente refresh a regenerar el CREATE entero.
+                    await TableProcessor.saveQuery(dml.data.table, dml.data.database, generatedCreate);
 
                     UIUtils.showItemSuccess(tableName);
                     successCount++;

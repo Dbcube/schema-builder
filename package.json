@@ -10,7 +10,9 @@
     "require": "./dist/index.cjs"
   },
   "scripts": {
-    "build": "tsup && bunx dts-bundle-generator --no-banner -o dist/index.d.ts src/index.ts && node -e \"const fs=require('fs');fs.copyFileSync('dist/index.d.ts','dist/index.d.mts')\""
+    "build": "tsup && bunx dts-bundle-generator --no-banner -o dist/index.d.ts src/index.ts && node -e \"const fs=require('fs');fs.copyFileSync('dist/index.d.ts','dist/index.d.mts')\"",
+    "test": "node test/dependency-order.cjs",
+    "test:integration": "node test/integration/refresh-regressions.cjs"
   },
   "keywords": [
     "dbcube",

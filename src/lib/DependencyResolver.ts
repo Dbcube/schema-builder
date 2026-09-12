@@ -150,6 +150,14 @@ export class DependencyResolver {
         // the in-degree of all tables that depend on it
         for (const dep of dependencies) {
             for (const dependency of dep.dependencies) {
+                // Una FK a la PROPIA tabla (jerarquias: parent_id -> id) no es una
+                // dependencia de ORDEN: la tabla se crea en una sola sentencia y la
+                // restriccion se satisface sola. Contarla como arista entrante hacia
+                // si misma hacia que su grado nunca llegase a 0, de modo que Kahn no
+                // la procesaba NUNCA y caia en la rama de respaldo — arrastrando ahi
+                // a todas las tablas que dependian de ella, que acababan creandose
+                // ANTES que ella y fallando por FK.
+                if (dependency === dep.tableName) continue;
                 // If dependency exists in our table list, add edge: dependency -> dep.tableName
                 if (inDegree.has(dependency)) {
                     if (!graph.has(dependency)) {
