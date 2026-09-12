@@ -89,7 +89,7 @@ function makeProject(cubes) {
         : 'schema-engine-linux-x64';
     const src = path.join(MONO, 'schema-engine', 'binaries', binName);
     if (!fs.existsSync(src)) throw new Error('falta el binario del schema-engine: ' + src);
-    fs.copyFileSync(src, path.join(binDir, binName.replace(/^schema-engine-/, 'schema-engine-v2.0.0-')));
+    fs.copyFileSync(src, path.join(binDir, binName.replace(/^schema-engine-/, 'schema-engine-v2.1.0-')));
 
     return root;
 }
